@@ -29,6 +29,7 @@ mcp-mlx-whisper-transcriber/
 
 ### index.js
 
+- `resolveFilePath()`: Resolves file paths using TRANSCRIBE_BASE_PATH if configured
 - `transcribeWithMLX()`: Main transcription function
   - Extracts audio from video if needed (via ffmpeg)
   - Spawns Python with inline script to run mlx_whisper
@@ -39,6 +40,11 @@ mcp-mlx-whisper-transcriber/
   - `transcribe_audio`: Main transcription tool
   - `check_mlx_status`: Verifies MLX Whisper installation
   - `list_audio_files`: Lists media files in a directory
+
+### Environment Variables
+
+- `WHISPER_MODEL`: Default model (default: `large-v3`)
+- `TRANSCRIBE_BASE_PATH`: Default folder for audio/video files (enables filename-only usage)
 
 ### Dependencies
 
@@ -65,13 +71,20 @@ The Python script is embedded as a string in Node.js and spawned with `python3 -
 
 To modify the Python transcription logic, edit the `pythonScript` template string in `transcribeWithMLX()`.
 
+### Path Resolution
+
+The `resolveFilePath()` function handles path resolution:
+1. If absolute path exists, use it directly
+2. If `TRANSCRIBE_BASE_PATH` is set, try combining with filename
+3. Return original path (will fail with file not found if invalid)
+
 ### Model Selection
 
 Models are downloaded from Hugging Face (`mlx-community/whisper-{model}-mlx`) on first use. The model cache is managed by the `huggingface_hub` library.
 
 ### Error Handling
 
-- File not found errors return user-friendly messages
+- File not found errors return user-friendly messages with hints about base path
 - Python errors are captured from stderr and logged
 - JSON parsing failures include raw output for debugging
 
@@ -95,6 +108,8 @@ npx @modelcontextprotocol/inspector node index.js
 
 3. **Timeouts**: Large model downloads can timeout. The model is cached after first download.
 
+4. **File not found in Cowork**: When using Cowork (Claude Desktop's VM mode), the VM has different paths than the Mac. Configure `TRANSCRIBE_BASE_PATH` to the Mac path so the MCP server (which runs on the Mac) can find files.
+
 ## MCP Configuration
 
 Example Claude Desktop config:
@@ -107,9 +122,16 @@ Example Claude Desktop config:
       "args": ["/path/to/index.js"],
       "env": {
         "PATH": "/path/to/venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
-        "WHISPER_MODEL": "large-v3"
+        "WHISPER_MODEL": "large-v3",
+        "TRANSCRIBE_BASE_PATH": "/path/to/audio/files"
       }
     }
   }
 }
 ```
+
+## Version History
+
+- **2.1.0**: Added `TRANSCRIBE_BASE_PATH` support for easier file access
+- **2.0.0**: Switched from Ollama to MLX Whisper for native Apple Silicon support
+- **1.0.0**: Initial release with Ollama-based transcription

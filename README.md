@@ -9,6 +9,7 @@ An MCP (Model Context Protocol) server for audio and video transcription using [
 - **Video Support**: Automatically extracts audio from video files (MP4, MOV, AVI, MKV, WebM)
 - **Audio Support**: MP3, WAV, OGG, FLAC, M4A
 - **Auto Language Detection**: Automatically detects the spoken language
+- **Base Path Support**: Configure a default folder so you can use just filenames
 
 ## Requirements
 
@@ -57,14 +58,30 @@ Add to your Claude Desktop config (`~/.claude/claude_desktop_config.json`):
       "command": "node",
       "args": ["/path/to/mcp-mlx-whisper-transcriber/index.js"],
       "env": {
-        "PATH": "/path/to/mcp-mlx-whisper-transcriber/venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+        "PATH": "/path/to/mcp-mlx-whisper-transcriber/venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
+        "TRANSCRIBE_BASE_PATH": "/path/to/your/audio/files"
       }
     }
   }
 }
 ```
 
-Replace `/path/to/` with the actual path to your installation.
+Replace `/path/to/` with the actual paths on your system.
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `WHISPER_MODEL` | Default Whisper model to use | `large-v3` |
+| `TRANSCRIBE_BASE_PATH` | Default folder for audio/video files | (none) |
+
+### TRANSCRIBE_BASE_PATH
+
+When configured, this enables convenient features:
+
+- **Use just filenames**: Instead of `/Users/me/audio/meeting.mp3`, just say `meeting.mp3`
+- **List files without path**: `list_audio_files` defaults to this folder
+- **Tool hints**: Tool descriptions show the configured path
 
 ## Available Tools
 
@@ -73,7 +90,9 @@ Replace `/path/to/` with the actual path to your installation.
 Transcribe an audio or video file.
 
 **Parameters:**
-- `file_path` (required): Absolute path to the audio/video file
+- `file_path` (required): Path to the audio/video file. Can be:
+  - Full absolute path: `/Users/me/audio/meeting.mp3`
+  - Just filename (if `TRANSCRIBE_BASE_PATH` is set): `meeting.mp3`
 - `model` (optional): Whisper model to use (default: `large-v3`)
   - `tiny` - Fastest, least accurate
   - `base` - Fast, basic accuracy
@@ -83,11 +102,14 @@ Transcribe an audio or video file.
 
 ### check_mlx_status
 
-Check if MLX Whisper is installed and Metal GPU is available.
+Check if MLX Whisper is installed and Metal GPU is available. Also shows the configured base path.
 
 ### list_audio_files
 
 List all audio and video files in a directory.
+
+**Parameters:**
+- `directory` (optional if `TRANSCRIBE_BASE_PATH` is set): Directory to scan
 
 ## Models
 
@@ -101,17 +123,18 @@ List all audio and video files in a directory.
 
 With Apple Silicon's unified memory, even the large-v3 model runs efficiently. If you have 16GB+ RAM, large-v3 is recommended for best results.
 
-## Environment Variables
-
-- `WHISPER_MODEL`: Default model to use (default: `large-v3`)
-
 ## Example Usage
 
 Once configured, you can ask Claude:
 
-- "Transcribe the video at /path/to/video.mp4"
+**With TRANSCRIBE_BASE_PATH configured:**
+- "Transcribe meeting.mp4"
+- "List audio files"
+- "Transcribe the video in my folder"
+
+**Without TRANSCRIBE_BASE_PATH:**
+- "Transcribe /path/to/video.mp4"
 - "List audio files in /path/to/folder"
-- "Check if MLX Whisper is working"
 
 ## Troubleshooting
 
@@ -134,6 +157,13 @@ brew install ffmpeg
 
 Make sure `/opt/homebrew/bin` is in the PATH in your MCP config.
 
+### "File not found" errors
+
+If using `TRANSCRIBE_BASE_PATH`, make sure:
+1. The path in your config is correct
+2. The file exists in that folder
+3. You're using the correct filename (case-sensitive)
+
 ### Timeout on first run
 
 The first transcription with a new model will download the model weights (can be several GB for large-v3). This is normal and only happens once.
@@ -146,4 +176,4 @@ MIT
 
 - [MLX Whisper](https://github.com/ml-explore/mlx-examples/tree/main/whisper) by Apple
 - [OpenAI Whisper](https://github.com/openai/whisper) - Original model
-- [Model Context Protocol](https://github.com/anthropics/anthropic-cookbook/tree/main/misc/model_context_protocol) by Anthropic
+- [Model Context Protocol](https://github.com/modelcontextprotocol/specification) by Anthropic
