@@ -12,12 +12,13 @@ import { spawn } from "child_process";
 
 // Configuration
 const WHISPER_MODEL = process.env.WHISPER_MODEL || "large-v3";
+const TRANSCRIBE_BASE_PATH = process.env.TRANSCRIBE_BASE_PATH || "";
 
 // Create MCP server
 const server = new Server(
   {
     name: "mlx-whisper-transcriber",
-    version: "2.0.0",
+    version: "2.1.0",
   },
   {
     capabilities: {
@@ -30,6 +31,34 @@ const server = new Server(
 function log(message) {
   const timestamp = new Date().toISOString();
   console.error(`[${timestamp}] ${message}`);
+}
+
+// Helper: Resolve file path (handles relative paths and base path)
+function resolveFilePath(inputPath) {
+  // If it's already an absolute path that exists, use it
+  if (path.isAbsolute(inputPath) && fs.existsSync(inputPath)) {
+    return inputPath;
+  }
+
+  // If we have a base path configured, try combining with it
+  if (TRANSCRIBE_BASE_PATH) {
+    // Handle just filename
+    const withBasePath = path.join(TRANSCRIBE_BASE_PATH, path.basename(inputPath));
+    if (fs.existsSync(withBasePath)) {
+      log(`Resolved "${inputPath}" to "${withBasePath}" using TRANSCRIBE_BASE_PATH`);
+      return withBasePath;
+    }
+
+    // Handle relative path
+    const fullPath = path.join(TRANSCRIBE_BASE_PATH, inputPath);
+    if (fs.existsSync(fullPath)) {
+      log(`Resolved "${inputPath}" to "${fullPath}" using TRANSCRIBE_BASE_PATH`);
+      return fullPath;
+    }
+  }
+
+  // Return original path (will fail with file not found if it doesn't exist)
+  return inputPath;
 }
 
 // Helper: Get file size in human readable format
@@ -203,18 +232,24 @@ print(json.dumps({"success": True, "text": result["text"], "segments": result.ge
 
 // List available tools
 server.setRequestHandler(ListToolsRequestSchema, async () => {
+  const basePathInfo = TRANSCRIBE_BASE_PATH
+    ? `\n\nBase path configured: ${TRANSCRIBE_BASE_PATH} (you can use just filenames)`
+    : "";
+
   return {
     tools: [
       {
         name: "transcribe_audio",
         description:
-          "Transcribe an audio or video file using MLX Whisper (optimized for Apple Silicon). Supports MP3, WAV, OGG, FLAC, M4A, MP4, MOV, AVI, MKV, WebM files.",
+          `Transcribe an audio or video file using MLX Whisper (optimized for Apple Silicon). Supports MP3, WAV, OGG, FLAC, M4A, MP4, MOV, AVI, MKV, WebM files.${basePathInfo}`,
         inputSchema: {
           type: "object",
           properties: {
             file_path: {
               type: "string",
-              description: "Absolute path to the audio or video file to transcribe",
+              description: TRANSCRIBE_BASE_PATH
+                ? `File path or just the filename (will look in ${TRANSCRIBE_BASE_PATH})`
+                : "Absolute path to the audio or video file to transcribe",
             },
             model: {
               type: "string",
@@ -235,16 +270,20 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: "list_audio_files",
-        description: "List audio and video files in a directory",
+        description: TRANSCRIBE_BASE_PATH
+          ? `List audio and video files. Defaults to ${TRANSCRIBE_BASE_PATH} if no directory specified.`
+          : "List audio and video files in a directory",
         inputSchema: {
           type: "object",
           properties: {
             directory: {
               type: "string",
-              description: "Directory path to scan for audio/video files",
+              description: TRANSCRIBE_BASE_PATH
+                ? `Directory path (defaults to ${TRANSCRIBE_BASE_PATH})`
+                : "Directory path to scan for audio/video files",
             },
           },
-          required: ["directory"],
+          required: TRANSCRIBE_BASE_PATH ? [] : ["directory"],
         },
       },
     ],
@@ -257,25 +296,35 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   log(`Tool called: ${name}`);
   log(`Arguments: ${JSON.stringify(args)}`);
+  if (TRANSCRIBE_BASE_PATH) {
+    log(`Base path: ${TRANSCRIBE_BASE_PATH}`);
+  }
 
   try {
     switch (name) {
       case "transcribe_audio": {
-        const filePath = args.file_path;
+        const inputPath = args.file_path;
         const model = args.model || WHISPER_MODEL;
 
         log(`=== Starting Transcription ===`);
-        log(`File: ${filePath}`);
+        log(`Input path: ${inputPath}`);
         log(`Model: ${model}`);
+
+        // Resolve the file path
+        const filePath = resolveFilePath(inputPath);
+        log(`Resolved path: ${filePath}`);
 
         // Validate file exists
         if (!fs.existsSync(filePath)) {
           log(`Error: File not found`);
+          const suggestion = TRANSCRIBE_BASE_PATH
+            ? `\n\nTip: Files should be in ${TRANSCRIBE_BASE_PATH} or provide a full path.`
+            : "";
           return {
             content: [
               {
                 type: "text",
-                text: `Error: File not found: ${filePath}`,
+                text: `Error: File not found: ${filePath}${suggestion}`,
               },
             ],
           };
@@ -345,13 +394,17 @@ except Exception as e:
           python.on("close", () => {
             try {
               const result = JSON.parse(stdout.trim());
+              const basePathStatus = TRANSCRIBE_BASE_PATH
+                ? `\n**Base path:** ${TRANSCRIBE_BASE_PATH}`
+                : "\n**Base path:** Not configured (use full paths)";
+
               if (result.success) {
                 log(`MLX Whisper is ready. Metal: ${result.metal_available}`);
                 resolve({
                   content: [
                     {
                       type: "text",
-                      text: `## MLX Whisper Status\n\n✅ **MLX Whisper installed**\n\n**Metal GPU:** ${result.metal_available ? "✅ Available" : "❌ Not available"}\n**Default model:** whisper-${WHISPER_MODEL}-mlx\n\n**Available models:**\n- tiny (fastest, least accurate)\n- base\n- small\n- medium\n- large-v3 (slowest, most accurate)\n\n**Tip:** With 128GB unified memory, large-v3 runs smoothly!`,
+                      text: `## MLX Whisper Status\n\n✅ **MLX Whisper installed**\n\n**Metal GPU:** ${result.metal_available ? "✅ Available" : "❌ Not available"}\n**Default model:** whisper-${WHISPER_MODEL}-mlx${basePathStatus}\n\n**Available models:**\n- tiny (fastest, least accurate)\n- base\n- small\n- medium\n- large-v3 (slowest, most accurate)\n\n**Tip:** With 128GB unified memory, large-v3 runs smoothly!`,
                     },
                   ],
                 });
@@ -394,7 +447,20 @@ except Exception as e:
       }
 
       case "list_audio_files": {
-        const directory = args.directory;
+        // Use provided directory or fall back to base path
+        const directory = args.directory || TRANSCRIBE_BASE_PATH;
+
+        if (!directory) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Error: No directory specified and TRANSCRIBE_BASE_PATH is not configured.`,
+              },
+            ],
+          };
+        }
+
         log(`Listing audio files in: ${directory}`);
 
         if (!fs.existsSync(directory)) {
@@ -421,7 +487,7 @@ except Exception as e:
           .map((file) => {
             const filePath = path.join(directory, file);
             const stats = fs.statSync(filePath);
-            return `- **${file}** (${formatFileSize(stats.size)})\n  Path: \`${filePath}\``;
+            return `- **${file}** (${formatFileSize(stats.size)})`;
           });
 
         log(`Found ${files.length} audio/video files`);
@@ -441,7 +507,7 @@ except Exception as e:
           content: [
             {
               type: "text",
-              text: `## Audio/Video files in ${directory}\n\n${files.join("\n\n")}`,
+              text: `## Audio/Video files in ${directory}\n\n${files.join("\n")}`,
             },
           ],
         };
@@ -476,6 +542,9 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   log("MLX Whisper Transcriber MCP server started");
+  if (TRANSCRIBE_BASE_PATH) {
+    log(`Base path configured: ${TRANSCRIBE_BASE_PATH}`);
+  }
 }
 
 main().catch((error) => {
