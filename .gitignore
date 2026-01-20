@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+
+# Python virtual environment
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+
+# Environment files
+.env
+.env.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test audio/video files (don't commit large media files)
+*.mp3
+*.wav
+*.ogg
+*.flac
+*.m4a
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+*.wmv
+*.flv
+
+# Temporary audio extraction files
+*_temp_audio.wav
+
+# MLX model cache (downloaded automatically)
+.mlx_models/
